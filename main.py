@@ -412,26 +412,26 @@ def upsert_detail(conn, rows: List[Dict[str, Any]]):
         %(detailNote)s, %(selfGoodNm)s, %(sugAmt)s, %(sahaca_amount)s
     )
     ON DUPLICATE KEY UPDATE
-        proName = IF(flag_process_erp = 1, proName, VALUES(proName)),
-        proDecNo = IF(flag_process_erp = 1, proDecNo, VALUES(proDecNo)),
-        goodCd = IF(flag_process_erp = 1, goodCd, VALUES(goodCd)),
-        pojCd = IF(flag_process_erp = 1, pojCd, VALUES(pojCd)),
-        danCd = IF(flag_process_erp = 1, danCd, VALUES(danCd)),
-        lvCd = IF(flag_process_erp = 1, lvCd, VALUES(lvCd)),
-        sanCd = IF(flag_process_erp = 1, sanCd, VALUES(sanCd)),
-        selfGoodCd = IF(flag_process_erp = 1, selfGoodCd, VALUES(selfGoodCd)),
-        selfPojCd = IF(flag_process_erp = 1, selfPojCd, VALUES(selfPojCd)),
-        selfDanCd = IF(flag_process_erp = 1, selfDanCd, VALUES(selfDanCd)),
-        selfLvCd = IF(flag_process_erp = 1, selfLvCd, VALUES(selfLvCd)),
-        selfSanCd = IF(flag_process_erp = 1, selfSanCd, VALUES(selfSanCd)),
-        ecoCd = IF(flag_process_erp = 1, ecoCd, VALUES(ecoCd)),
-        unitQuantity = IF(flag_process_erp = 1, unitQuantity, VALUES(unitQuantity)),
-        shipQuantity = IF(flag_process_erp = 1, shipQuantity, VALUES(shipQuantity)),
-        frtQy = IF(flag_process_erp = 1, frtQy, VALUES(frtQy)),
-        detailNote = IF(flag_process_erp = 1, detailNote, VALUES(detailNote)),
-        selfGoodNm = IF(flag_process_erp = 1, selfGoodNm, VALUES(selfGoodNm)),
-        sugAmt = IF(flag_process_erp = 1, sugAmt, VALUES(sugAmt)),
-        sahaca_amount = IF(flag_process_erp = 1, sahaca_amount, VALUES(sahaca_amount))
+        proName = IF(flag_erp_apply = 1, proName, VALUES(proName)),
+        proDecNo = IF(flag_erp_apply = 1, proDecNo, VALUES(proDecNo)),
+        goodCd = IF(flag_erp_apply = 1, goodCd, VALUES(goodCd)),
+        pojCd = IF(flag_erp_apply = 1, pojCd, VALUES(pojCd)),
+        danCd = IF(flag_erp_apply = 1, danCd, VALUES(danCd)),
+        lvCd = IF(flag_erp_apply = 1, lvCd, VALUES(lvCd)),
+        sanCd = IF(flag_erp_apply = 1, sanCd, VALUES(sanCd)),
+        selfGoodCd = IF(flag_erp_apply = 1, selfGoodCd, VALUES(selfGoodCd)),
+        selfPojCd = IF(flag_erp_apply = 1, selfPojCd, VALUES(selfPojCd)),
+        selfDanCd = IF(flag_erp_apply = 1, selfDanCd, VALUES(selfDanCd)),
+        selfLvCd = IF(flag_erp_apply = 1, selfLvCd, VALUES(selfLvCd)),
+        selfSanCd = IF(flag_erp_apply = 1, selfSanCd, VALUES(selfSanCd)),
+        ecoCd = IF(flag_erp_apply = 1, ecoCd, VALUES(ecoCd)),
+        unitQuantity = IF(flag_erp_apply = 1, unitQuantity, VALUES(unitQuantity)),
+        shipQuantity = IF(flag_erp_apply = 1, shipQuantity, VALUES(shipQuantity)),
+        frtQy = IF(flag_erp_apply = 1, frtQy, VALUES(frtQy)),
+        detailNote = IF(flag_erp_apply = 1, detailNote, VALUES(detailNote)),
+        selfGoodNm = IF(flag_erp_apply = 1, selfGoodNm, VALUES(selfGoodNm)),
+        sugAmt = IF(flag_erp_apply = 1, sugAmt, VALUES(sugAmt)),
+        sahaca_amount = IF(flag_erp_apply = 1, sahaca_amount, VALUES(sahaca_amount))
     """
     with conn.cursor() as cur:
         cur.executemany(sql, rows)

@@ -1,5 +1,5 @@
 # SERVICE_KEY
-SERVICE_KEY=
+SERVICE_KEY=https://at.agromarket.kr/admin/elecInvoice/api.do?type=&page=1에서 확인 가능
 
 # MySQL
 MYSQL_HOST=

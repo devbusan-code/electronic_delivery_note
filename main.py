@@ -3,6 +3,7 @@
 
 import json
 import os
+import sys
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -143,10 +144,12 @@ def populate_sahaca_amount(conn, rows: List[Dict[str, Any]]):
 
 
 def update_daily_unloading_cost_total(conn, inven_nos: List[str]):
+    # 마스터/디테일 업서트 후 영향을 받은 송품장(invenNo)을 기반으로 집계 대상을 추린다.
     unique_inven_nos = sorted({inven_no for inven_no in inven_nos if inven_no})
     if not unique_inven_nos:
         return
 
+    # 영향을 받은 (shipDate, 출하코드, 상품코드) 조합을 먼저 파악한다.
     placeholders = ",".join(["%s"] * len(unique_inven_nos))
     impacted_sql = f"""
     SELECT DISTINCT
@@ -175,6 +178,7 @@ def update_daily_unloading_cost_total(conn, inven_nos: List[str]):
         )
         return
 
+    # 합계 쿼리에서 동일 조합을 IN 절로 비교할 수 있도록 튜플로 펼친다.
     combo_placeholders = ",".join(["(%s,%s,%s,%s,%s)"] * len(impacted_rows))
     combo_params: List[Any] = []
     for ship_date, chulcode, chcdcode, self_san_cd, self_good_cd in impacted_rows:
@@ -182,6 +186,7 @@ def update_daily_unloading_cost_total(conn, inven_nos: List[str]):
             [ship_date, chulcode, chcdcode, self_san_cd, self_good_cd]
         )
 
+    # 전자송품장 디테일에서 사하차비 금액을 조합별로 합산한다.
     sum_sql = f"""
     SELECT
         m.shipDate,
@@ -206,6 +211,7 @@ def update_daily_unloading_cost_total(conn, inven_nos: List[str]):
         logger.info("일별 하차비 합계 계산 결과 없음")
         return
 
+    # 최종 합계를 daily_unloading_cost_total 테이블에 반영한다.
     insert_sql = """
     INSERT INTO daily_unloading_cost_total (
         shipdate, chulcode, chcdcode, selfSanCd, selfGoodCd, unloading_cost_total
@@ -487,15 +493,25 @@ def log_api_with_conf(db_conf: Dict[str, Any], **kwargs):
         conn.close()
 
 
-def main():
+def main() -> int:
+    raw_ship_date = sys.argv[1] if len(sys.argv) > 1 else None
+    if not raw_ship_date:
+        logger.error("명령행 첫 번째 인자에 출하일(예: 20251231)을 입력해야 합니다.")
+        return 2
+    ship_date_arg = raw_ship_date.replace("-", "").replace("/", "")
+    if len(ship_date_arg) != 8 or not ship_date_arg.isdigit():
+        logger.error(
+            "출하일 인자는 하이픈(/)을 제거한 8자리 숫자여야 합니다. 예) 20251231"
+        )
+        return 2
+
     service_key = os.getenv("SERVICE_KEY")
     if not service_key:
         logger.error("환경 변수 SERVICE_KEY가 설정되어 있지 않습니다.")
-        return
+        return 1
 
-    ship_date = os.getenv("SHIP_DATE", "20251117")
-    page_no = int(os.getenv("PAGE_NO", "1"))
-    api_url = build_api_url(service_key, ship_date, page_no)
+    ship_date = ship_date_arg
+    page_no = 1
 
     db_conf = {
         "host": os.getenv("MYSQL_HOST", "127.0.0.1"),
@@ -507,12 +523,14 @@ def main():
         "autocommit": False,
     }
 
-    # API 호출
-    try:
-        payload = fetch_inven_json(api_url)
-        items = pick_items(payload)
-        if not items:
-            logger.error("응답에서 전자송품장 데이터를 찾지 못했습니다.")
+    while True:
+        api_url = build_api_url(service_key, ship_date, page_no)
+
+        try:
+            payload = fetch_inven_json(api_url)
+            items = pick_items(payload)
+        except urllib.error.HTTPError as e:
+            logger.error(f"HTTP 오류: {e.code} {e.reason}")
             log_api_with_conf(
                 db_conf,
                 flag_success=0,
@@ -520,94 +538,13 @@ def main():
                 page_no=page_no,
                 status="fail",
                 tot_cnt=0,
-                response_content=json.dumps(payload, ensure_ascii=False)[:5000],
+                response_content=str(e),
             )
-            return
-    except urllib.error.HTTPError as e:
-        logger.error(f"HTTP 오류: {e.code} {e.reason}")
-        log_api_with_conf(
-            db_conf,
-            flag_success=0,
-            ship_date=ship_date,
-            page_no=page_no,
-            status="fail",
-            tot_cnt=0,
-            response_content=str(e),
-        )
-        return
-    except urllib.error.URLError as e:
-        logger.error(f"URL 오류: {e.reason}")
-        log_api_with_conf(
-            db_conf,
-            flag_success=0,
-            ship_date=ship_date,
-            page_no=page_no,
-            status="fail",
-            tot_cnt=0,
-            response_content=str(e),
-        )
-        return
-    except json.JSONDecodeError:
-        logger.error("응답을 JSON으로 파싱하지 못했습니다.")
-        log_api_with_conf(
-            db_conf,
-            flag_success=0,
-            ship_date=ship_date,
-            page_no=page_no,
-            status="fail",
-            tot_cnt=0,
-            response_content="JSON decode error",
-        )
-        return
-
-    master_rows: List[Dict[str, Any]] = []
-    detail_rows: List[Dict[str, Any]] = []
-    for master_item in items:
-        master_rows.append(build_master_row(master_item))
-        for detail_item in get_detail_list(master_item):
-            detail_rows.append(build_detail_row(master_item.get("invenNo"), detail_item))
-
-    try:
-        conn = pymysql.connect(**db_conf)
-    except Exception as e:
-        logger.error(f"DB 연결 실패: {e}")
-        log_api_with_conf(
-            db_conf,
-            flag_success=0,
-            ship_date=ship_date,
-            page_no=page_no,
-            status="fail",
-            tot_cnt=0,
-            response_content=str(e),
-        )
-        return
-
-    try:
-        if master_rows:
-            upsert_master(conn, master_rows)
-        if detail_rows:
-            populate_sahaca_amount(conn, detail_rows)
-            upsert_detail(conn, detail_rows)
-            update_daily_unloading_cost_total(
-                conn, [row.get("invenNo") for row in detail_rows]
-            )
-        insert_api_log(
-            conn,
-            flag_success=1,
-            ship_date=ship_date,
-            page_no=page_no,
-            status="success",
-            tot_cnt=len(items),
-            response_content=json.dumps(payload, ensure_ascii=False)[:5000],
-        )
-        conn.commit()
-        logger.info(f"마스터 {len(master_rows)}건, 디테일 {len(detail_rows)}건 DB 반영 완료.")
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"DB 처리 중 오류: {e}")
-        try:
-            insert_api_log(
-                conn,
+            return 3
+        except urllib.error.URLError as e:
+            logger.error(f"URL 오류: {e.reason}")
+            log_api_with_conf(
+                db_conf,
                 flag_success=0,
                 ship_date=ship_date,
                 page_no=page_no,
@@ -615,12 +552,98 @@ def main():
                 tot_cnt=0,
                 response_content=str(e),
             )
+            return 3
+        except json.JSONDecodeError:
+            logger.error("응답을 JSON으로 파싱하지 못했습니다.")
+            log_api_with_conf(
+                db_conf,
+                flag_success=0,
+                ship_date=ship_date,
+                page_no=page_no,
+                status="fail",
+                tot_cnt=0,
+                response_content="JSON decode error",
+            )
+            return 3
+
+        if not items:
+            logger.info("페이지 %d에서 더 이상 전자송품장 데이터가 없어 수집을 종료합니다.", page_no)
+            break
+
+        master_rows: List[Dict[str, Any]] = []
+        detail_rows: List[Dict[str, Any]] = []
+        for master_item in items:
+            master_rows.append(build_master_row(master_item))
+            for detail_item in get_detail_list(master_item):
+                detail_rows.append(
+                    build_detail_row(master_item.get("invenNo"), detail_item)
+                )
+
+        try:
+            conn = pymysql.connect(**db_conf)
+        except Exception as e:
+            logger.error(f"DB 연결 실패: {e}")
+            log_api_with_conf(
+                db_conf,
+                flag_success=0,
+                ship_date=ship_date,
+                page_no=page_no,
+                status="fail",
+                tot_cnt=0,
+                response_content=str(e),
+            )
+            return 3
+
+        try:
+            if master_rows:
+                upsert_master(conn, master_rows)
+            if detail_rows:
+                populate_sahaca_amount(conn, detail_rows)
+                upsert_detail(conn, detail_rows)
+                update_daily_unloading_cost_total(
+                    conn, [row.get("invenNo") for row in detail_rows]
+                )
+            insert_api_log(
+                conn,
+                flag_success=1,
+                ship_date=ship_date,
+                page_no=page_no,
+                status="success",
+                tot_cnt=len(items),
+                response_content=json.dumps(payload, ensure_ascii=False)[:5000],
+            )
             conn.commit()
-        except Exception as log_err:
-            logger.error(f"API 로그 기록 실패: {log_err}")
-    finally:
-        conn.close()
+            logger.info(
+                "페이지 %d 처리 완료: 마스터 %d건, 디테일 %d건",
+                page_no,
+                len(master_rows),
+                len(detail_rows),
+            )
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"DB 처리 중 오류: {e}")
+            try:
+                insert_api_log(
+                    conn,
+                    flag_success=0,
+                    ship_date=ship_date,
+                    page_no=page_no,
+                    status="fail",
+                    tot_cnt=0,
+                    response_content=str(e),
+                )
+                conn.commit()
+            except Exception as log_err:
+                logger.error(f"API 로그 기록 실패: {log_err}")
+            return 3
+        finally:
+            conn.close()
+
+        page_no += 1
+
+    return 0
+
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

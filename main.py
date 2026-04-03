@@ -1,7 +1,23 @@
-﻿# install dependencies:
-# uv add python-dotenv pymysql
+﻿# =============================================================
+# [ 운영 원칙 ]
+# - 주석은 상세하고, UTF-8 인코딩 기준으로 한글이 깨지지 않게 작성/유지한다.
+# - 작업 전 최신 소스를 다시 로드(재확인)하고 변경 후에도 한 번 더 검토한다.
+# - 호출 흐름과 데이터 반영 지점을 주석으로 유지한다.
+# - 전자송품장 처리 흐름은 README의 동작 요약과 이 헤더를 단일 기준으로 삼는다.
+# - SERVICE_KEY·DB 접속 정보 등 비밀값은 .env로만 관리하고 커밋하지 않는다.
+# - 스키마나 로직을 수정하면 README와 주석을 같은 날 업데이트한다.
+# - 변경 후 샘플 출하일로 실행해 로그와 DB 반영을 확인한다.
+# - 장애가 나면 logs/와 api_log 테이블을 우선 확인하고, 필요 시 재시도한다.
+# =============================================================
+# [ 흐름도 요약 ]
+# - 출하일(YYYYMMDD) 인자를 입력받는다.
+# - 서비스 키로 Agromarket 전자송품장 API를 페이지 단위 호출한다.
+# - 응답을 파싱해 마스터/디테일을 각각 업서트한다.
+# - sahacacode에서 단위수량별 하차비를 계산해 디테일 금액에 반영한다.
+# - chulcode_matching 기준으로 일별 하차비 합계를 daily_unloading_cost_total에 반영한다.
+# - 성공/실패 응답과 건수를 api_log 테이블에 기록한다.
+# =============================================================
 
-import json
 import os
 import sys
 import urllib.error
@@ -55,6 +71,7 @@ SAHACACODE_COLUMN_CANDIDATES: Dict[str, Tuple[str, ...]] = {
 }
 
 
+# 전자송품장 API URL 구성
 def build_api_url(service_key: str, ship_date: str = "20251117", page_no: int = 1) -> str:
     return (
         f"https://at.agromarket.kr/openApi/inven/list.do?serviceKey={service_key}"
@@ -100,6 +117,7 @@ def _to_decimal(value) -> Decimal:
         return ZERO_DECIMAL
 
 
+# sahacacode에서 단위수량별 하차비를 조회해 디테일 금액 컬럼을 채운다.
 def populate_sahaca_amount(conn, rows: List[Dict[str, Any]]):
     if not rows:
         return
@@ -144,6 +162,7 @@ def populate_sahaca_amount(conn, rows: List[Dict[str, Any]]):
 
 
 def update_daily_unloading_cost_total(conn, inven_nos: List[str]):
+    # 디테일 반영 후 영향을 받은 출하/상품별 일별 하차비 합계를 재집계한다.
     # 마스터/디테일 업서트 후 영향을 받은 송품장(invenNo)을 기반으로 집계 대상을 추린다.
     unique_inven_nos = sorted({inven_no for inven_no in inven_nos if inven_no})
     if not unique_inven_nos:
@@ -523,6 +542,7 @@ def main() -> int:
         "autocommit": False,
     }
 
+    # 페이지 단위로 전자송품장을 가져오며, 데이터가 없으면 종료한다.
     while True:
         api_url = build_api_url(service_key, ship_date, page_no)
 

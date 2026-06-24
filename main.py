@@ -13,6 +13,7 @@
 # - 출하일(YYYYMMDD) 인자를 입력받는다.
 # - 서비스 키로 Agromarket 전자송품장 API를 페이지 단위 호출한다.
 # - 응답을 파싱해 마스터/디테일을 각각 업서트한다.
+# - 숫자형 필드는 빈 문자열/콤마를 정리하고 DB 타입에 맞지 않으면 NULL로 저장한다.
 # - sahacacode에서 단위수량별 하차비를 계산해 디테일 금액에 반영한다.
 # - chulcode_matching 기준으로 일별 하차비 합계를 daily_unloading_cost_total에 반영한다.
 # - 성공/실패 응답과 건수를 api_log 테이블에 기록한다.
@@ -98,7 +99,7 @@ def _normalize_unit_quantity(value) -> Optional[str]:
     if value is None:
         return None
     try:
-        decimal_value = Decimal(str(value))
+        decimal_value = Decimal(str(value).replace(",", "").strip())
     except (InvalidOperation, TypeError, ValueError):
         fallback = str(value).strip()
         return fallback or None
@@ -110,12 +111,31 @@ def _normalize_unit_quantity(value) -> Optional[str]:
 
 
 def _to_decimal(value) -> Decimal:
+    decimal_value = _to_nullable_decimal(value)
+    if decimal_value is None:
+        return ZERO_DECIMAL
+    return decimal_value
+
+
+def _to_nullable_decimal(value) -> Optional[Decimal]:
     if value is None:
-        return ZERO_DECIMAL
+        return None
+    value_str = str(value).replace(",", "").strip()
+    if value_str == "":
+        return None
     try:
-        return Decimal(str(value))
+        return Decimal(value_str)
     except (InvalidOperation, TypeError, ValueError):
-        return ZERO_DECIMAL
+        return None
+
+
+def _to_nullable_int(value) -> Optional[int]:
+    decimal_value = _to_nullable_decimal(value)
+    if decimal_value is None:
+        return None
+    if decimal_value != decimal_value.to_integral():
+        return None
+    return int(decimal_value)
 
 
 # sahacacode에서 단위수량별 하차비를 조회해 디테일 금액 컬럼을 채운다.
@@ -337,7 +357,7 @@ def build_master_row(item: Dict[str, Any]) -> Dict[str, Any]:
         "drvName": _clip(item.get("drvName"), 255),
         "drvCall": _clip(item.get("drvCall"), 255),
         "drvCarNo": _clip(item.get("drvCarNo"), 255),
-        "drvRate": item.get("drvRate"),
+        "drvRate": _to_nullable_decimal(item.get("drvRate")),
         "drvBankName": _clip(item.get("drvBankName"), 255),
         "drvAccNum": _clip(item.get("drvAccNum"), 255),
         "drvAccDep": _clip(item.get("drvAccDep"), 255),
@@ -365,12 +385,12 @@ def build_detail_row(master_inven_no: str, item: Dict[str, Any]) -> Dict[str, An
         "selfLvCd": _clip(item.get("selfLvCd"), 6),
         "selfSanCd": _clip(item.get("selfSanCd"), 6),
         "ecoCd": _clip(item.get("ecoCd"), 1),
-        "unitQuantity": item.get("unitQuantity"),
-        "shipQuantity": item.get("shipQuantity"),
-        "frtQy": item.get("frtQy"),
+        "unitQuantity": _to_nullable_int(item.get("unitQuantity")),
+        "shipQuantity": _to_nullable_int(item.get("shipQuantity")),
+        "frtQy": _to_nullable_int(item.get("frtQy")),
         "detailNote": item.get("detailNote"),
         "selfGoodNm": _clip(item.get("selfGoodNm"), 255),
-        "sugAmt": item.get("sugAmt"),
+        "sugAmt": _to_nullable_decimal(item.get("sugAmt")),
         "sahaca_amount": ZERO_DECIMAL,
     }
 

@@ -18,6 +18,7 @@
 # - 성공/실패 응답과 건수를 api_log 테이블에 기록한다.
 # =============================================================
 
+import json
 import os
 import sys
 import urllib.error
@@ -205,7 +206,7 @@ def update_daily_unloading_cost_total(conn, inven_nos: List[str]):
             [ship_date, chulcode, chcdcode, self_san_cd, self_good_cd]
         )
 
-    # 전자송품장 디테일에서 사하차비 금액을 조합별로 합산한다.
+    # 전자송품장 디테일에서 상하차비 금액을 조합별로 합산한다.
     sum_sql = f"""
     SELECT
         m.shipDate,

@@ -1,6 +1,6 @@
 ﻿# Electronic Delivery Note 수집기
 
-Agromarket 전자송품장 오픈 API에서 데이터를 가져와 MySQL에 저장하고, 사하차비를 계산해 합계 테이블까지 반영하는 스크립트입니다. `main.py` 하나로 동작하며, 로그는 `logs/` 디렉터리에 일자별로 남습니다.
+Agromarket 전자송품장 오픈 API에서 데이터를 가져와 MySQL에 저장하고, 상하차비를 계산해 합계 테이블까지 반영하는 스크립트입니다. `main.py` 하나로 동작하며, 로그는 `logs/` 디렉터리에 일자별로 남습니다.
 
 ## 요구사항
 - Python 3.12+
@@ -20,7 +20,7 @@ uv pip install pymysql python-dotenv
 ```
 SERVICE_KEY=발급받은_서비스키
 MYSQL_HOST=localhost
-MYSQL_PORT=3306
+MYSQL_PORT=mysql 포트번호
 MYSQL_USER=사용자
 MYSQL_PASSWORD=비밀번호
 MYSQL_DATABASE=DB명
